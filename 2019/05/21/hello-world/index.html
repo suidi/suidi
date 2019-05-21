@@ -94,17 +94,17 @@
 
 
 
-<meta name="description" content="世界更新的速度比你努力的速度要快，努力的目的是不至于被世界落下太远。">
+<meta name="description" content="大多数 iOS App 在进入后台之后都会将一些关键任务封装到 Background Task 里，否则程序在若干秒之后就会被系统 Suspend。启动 Background Task 之后，可以获得 3 分钟继续执行代码的时间。 最近在调查 Messenger 的 Background Crash 问题，最后都追踪到和 Background Task 相关，和大家分享下一些要点。 Crash 信">
 <meta property="og:type" content="article">
-<meta property="og:title" content="Hello World">
+<meta property="og:title" content="iOS App 后台任务的坑">
 <meta property="og:url" content="http://yoursite.com/2019/05/21/hello-world/index.html">
 <meta property="og:site_name" content="BUG吧">
-<meta property="og:description" content="世界更新的速度比你努力的速度要快，努力的目的是不至于被世界落下太远。">
+<meta property="og:description" content="大多数 iOS App 在进入后台之后都会将一些关键任务封装到 Background Task 里，否则程序在若干秒之后就会被系统 Suspend。启动 Background Task 之后，可以获得 3 分钟继续执行代码的时间。 最近在调查 Messenger 的 Background Crash 问题，最后都追踪到和 Background Task 相关，和大家分享下一些要点。 Crash 信">
 <meta property="og:locale" content="zh-Hans">
-<meta property="og:updated_time" content="2019-05-21T08:08:14.178Z">
+<meta property="og:updated_time" content="2019-05-21T12:55:33.299Z">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Hello World">
-<meta name="twitter:description" content="世界更新的速度比你努力的速度要快，努力的目的是不至于被世界落下太远。">
+<meta name="twitter:title" content="iOS App 后台任务的坑">
+<meta name="twitter:description" content="大多数 iOS App 在进入后台之后都会将一些关键任务封装到 Background Task 里，否则程序在若干秒之后就会被系统 Suspend。启动 Background Task 之后，可以获得 3 分钟继续执行代码的时间。 最近在调查 Messenger 的 Background Crash 问题，最后都追踪到和 Background Task 相关，和大家分享下一些要点。 Crash 信">
 
 
 
@@ -139,7 +139,7 @@
 
 
 
-  <title>Hello World | BUG吧</title>
+  <title>iOS App 后台任务的坑 | BUG吧</title>
   
 
 
@@ -279,7 +279,7 @@
 
         
         
-          <h1 class="post-title" itemprop="name headline">Hello World</h1>
+          <h1 class="post-title" itemprop="name headline">iOS App 后台任务的坑</h1>
         
 
         <div class="post-meta">
@@ -329,7 +329,56 @@
       
 
       
-        
+        <p>大多数 iOS App 在进入后台之后都会将一些关键任务封装到 Background Task 里，否则程序在若干秒之后就会被系统 Suspend。启动 Background Task 之后，可以获得 3 分钟继续执行代码的时间。</p>
+<p>最近在调查 Messenger 的 Background Crash 问题，最后都追踪到和 Background Task 相关，和大家分享下一些要点。</p>
+<h3 id="Crash-信号"><a href="#Crash-信号" class="headerlink" title="Crash 信号"></a>Crash 信号</h3><p>一般 App 都有自己的 crash 日志采集工具，这类工具一般有三个问题。第一是在工具启动之前的 crash 日志无法捕捉，第二是如果 App 启动闪退日志无法上传，第三是一些特殊场景的系统强杀无法捕捉 crash 信号。</p>
+<p>解决第一个问题，只要将工具的执行时间尽可能提前，或者确保之前的代码及可能简单可靠。</p>
+<p>解决第二个问题，可以采用我之前分享过的，使用 NSURLSession 的 background mode。</p>
+<p>解决第三个问题，需要依赖于 Apple 自己的 crash 信号，这也是很多开发团队所忽视的一点。</p>
+<p>Apple 也有自己的 crash 日志采集，不过基于用户隐私的考虑，这个 crash 日志并不可靠，主要存在以下几方面的缺陷：</p>
+<ul>
+<li>用户需同意上传并分享数据，据闻，同意比例不足 20%，所以无法准确确定某个 crash 的实际影响面。</li>
+<li>crash 日志工具简陋，通过 Xcode -&gt; Organizer 打开，选中 App 就能从 Apple 后台下载某个版本的 crash 日志，无法通过某个条件做筛选，比如你不能过滤出所有 SIGKILL 的日志。</li>
+<li>日志不全，Apple 按照自己的规则呈现 crash 样本，一个 App 实际线上的 crash 非常之多，但 Apple 列出的 crash 样本只有数十个，规则不明。</li>
+<li>crash 日志只保存一周，一周刷新一次，所有比较明智的做法是写个脚本同步下来，上传到自己的后台。</li>
+</ul>
+<h3 id="Background-Task-花式-crash"><a href="#Background-Task-花式-crash" class="headerlink" title="Background Task 花式 crash"></a>Background Task 花式 crash</h3><p>Background Task 的 API 及其简单，begin 和 end 之间的代码全部进入 Background Task 的范畴。但简单的代码隐藏着不小的风险，下面列出三个比较容易出现的 crash。而且这三个 crash 都是客户端自带的 crash 采集工具无法捕捉的，只能通过 Apple 的 crash 日志获得信号。原因很简单，这些 crash 发生的时候 app 一般处于 suspend 状态，根本没有机会执行任何代码，系统直接发送 SIGKILL 信号后就将 app 强杀，并生成一个系统日志，一个只能 Apple 访问的日志，还得用户先同意上传分享。</p>
+<h3 id="0xdead10cc"><a href="#0xdead10cc" class="headerlink" title="0xdead10cc"></a>0xdead10cc</h3><p>这个 crash 日志一般长这样：</p>
+<blockquote>
+<p>Exception Type: EXC_CRASH (SIGKILL) Exception Codes: 0x0000000000000000, 0x0000000000000000 Exception Note: EXC_CORPSE_NOTIFY Termination Reason: Namespace SPRINGBOARD, Code 0xdead10cc<br>Termination Description: SPRINGBOARD, com.xxx.xxx was task-suspended with locked system file</p>
+</blockquote>
+<p>原因我之前介绍过，当你的 App 有 Extension，而且 Extension 存在和 Host App 共享数据的需求，一般做法会将 db 文件放入 shared container 目录下，此时你的 App 就有大概率会发生这种 crash。</p>
+<p>App 进入后台运行 Background Task，end 之后 App 被系统 suspend，如果 suspend 之后还存在任何访问 db 的操作，此时 App 会立马被系统强杀，这是 Apple 出于保护数据库文件的完整的考虑。</p>
+<p>所以正确的做法是将所有有可能在 App 进入后台之后，还会发生的 db 操作统统封入 Background Task，以确保安全。这个代码写在 db layer 可能更加合适。</p>
+<p>而且 Apple 推荐当你想启动 Background Task 的时候，其实并不需要考虑当前 App 是出于 foreground 还是 background，即使 App 在前台启动 Background Task，也并不会占用进入后台之后 3 分钟额度，所以放心大胆的把关键代码放进 Background Task 吧。</p>
+<h3 id="0xbada5e47"><a href="#0xbada5e47" class="headerlink" title="0xbada5e47"></a>0xbada5e47</h3><p>当你听从了上面的建议，大大方方的把尽可能多的关键代码封入 Background Task 后，那么你可能会遇到下面的 crash：</p>
+<blockquote>
+<p>Exception Type: EXC_CRASH (SIGKILL) Exception Codes: 0x0000000000000000, 0x0000000000000000 Exception Note: EXC_CORPSE_NOTIFY Termination Reason: Namespace ASSERTIOND, Code 0xbada5e47</p>
+</blockquote>
+<p>同理也是和 Background Task 相关，原因是 Apple 认为你启动了过多的 Background Task，所以要杀掉。多少算多呢？几十个不多，当前的 threshold 是 1000 个，超过 1000 个才会强杀。如果你的 Background Task 封装发生在 db layer，出现大量数据过来需要存储或读取的时候，还是有可能会 hit 这个 limit。</p>
+<p>另一个 0xbada5e47 的可能原因是，Background Task 在超时之后会调用 expiry handler，无论你有多少个 Background Task，所有 expiry handler 执行的时间不能超过若干秒，一旦超过也会被枪杀。所以在 expiry handler 里面切忌有任何比如 disk io 的耗时操作。</p>
+<h3 id="0x8badf00d"><a href="#0x8badf00d" class="headerlink" title="0x8badf00d"></a>0x8badf00d</h3><p>说到 0x8badf00d，大家都很熟悉了，当你的主线程卡住的时间太长，系统的 Watchdog 会将你的 App 强杀，并生成一个带有 0x8badf00d 的 crash 日志。</p>
+<p>Background Task 其实也可以 0x8badf00d 的，比如：</p>
+<blockquote>
+<p>Exception Type: EXC_CRASH (SIGKILL) Exception Codes: 0x0000000000000000, 0x0000000000000000 Exception Note: EXC_CORPSE_NOTIFY Termination Reason: Namespace SPRINGBOARD, Code 0x8badf00d</p>
+</blockquote>
+<p>当你的代码逻辑会产生 leaked Background Task 时，就会出现上面的系统强杀 crash 日志了，什么是 leaked Background Task 呢？看代码：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">- (void)startBgTask</span><br><span class="line">&#123;</span><br><span class="line">  self.bgTaskID = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^&#123;</span><br><span class="line">    NSLog(@&quot;Expired: %lu&quot;, (unsigned long)self.bgTaskID);</span><br><span class="line">    [[UIApplication sharedApplication] endBackgroundTask:self.bgTaskID];</span><br><span class="line">  &#125;];</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">- (void)endBgTask</span><br><span class="line">&#123;</span><br><span class="line">  [[UIApplication sharedApplication] endBackgroundTask:self.bgTaskID];</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>上面的代码如果 startBgTask 执行两次，就一定会出现 leaked Background Task，因为 self.bgTaskID 第二次会被赋予一个新的 ID，之前的 task ID 就丢失了，无法正确调用 end。</p>
+<p>那怎么判断 0x8badf00d 到底是主线程卡死，还是出现了 leaked Background Task ？很简单，看主线程的 stack，如果长这样：</p>
+<blockquote>
+<p>Thread 0 Crashed: 0 libsystem_kernel.dylib 0x000000018472be08 0x18472b000 + 3592 1 libsystem_kernel.dylib 0x000000018472bc80 0x18472b000 + 3200 2 CoreFoundation 0x0000000184c6ee40 0x184b81000 + 974400 3 CoreFoundation 0x0000000184c6c908 0x184b81000 + 964872 4 CoreFoundation 0x0000000184b8cda8 0x184b81000 + 48552 5 GraphicsServices 0x0000000186b6f020 0x186b64000 + 45088 6 UIKit 0x000000018eb6d78c 0x18e850000 + 3266444 7 Messenger 0x0000000103015ee4 0x102ff8000 + 122596 8 libdyld.dylib 0x000000018461dfc0 0x18461d000 + 4032</p>
+</blockquote>
+<p>这个 stack 很经典，经常会看到，不需要 symbolicate 也能知道是干啥，这是 UI 线程 runloop 处于 idle 状态的 stack，在等待 kernel 的 message。表示 UI 线程此时处于闲置状态，这种状态下的系统强杀大概率是由于 leaked Background Task 导致的。</p>
+<h3 id="善用设备本地的-crash-日志"><a href="#善用设备本地的-crash-日志" class="headerlink" title="善用设备本地的 crash 日志"></a>善用设备本地的 crash 日志</h3><p>当用户的手机遇到 crash，而你既无法重现又在后台找不到 crash 日志的时候，此时你最大的希望就是手机本地的 crash 日志了。</p>
+<p>本地日志位于 Settings -&gt; Privacy -&gt; Analytics -&gt; Analytics Data。打开看下，说不定你所开发的 App 的 crash 日志，我手机上微信和支付宝都有好些日志。</p>
+<p>日志排序先是按照 App 的名称，再按日志发生的日期。</p>
+<p>如果调查内存使用过多的 crash，可以查看 JetsamEvent-xxx 开头的日志。</p>
+<p>如果想知道 App 发生 crash 前系统有哪些异常日志，需要首先在设备上安装一个 loggingiOS.mobileconfig 的文件，这个文件基本上就是让用户授权给你记录系统行为，用户在遇到 crash 的时候，同时按下两个音量键 + 电源键，松手震动之后，系统会将过去一段时间的关键日志记录下来，对于分析一些疑难杂症很有帮助，这种日志一般为 sysdiagnose_xxx 开头。</p>
+<p>安装上述 loggingiOS.mobileconfig 文件之后，还有另外一个好处，Apple 会记录更多而且更详细的 crash 日志了，因为用户授权过，所以 Apple 可以大胆施为了。这类日志的文件名一般为：stacks + appName - date.ips。</p>
+<p>如果用户的设备能重现你所调查的问题，还有另一个简单高效的办法，将手机 usb 连接 mac，然后启动 mac 上的 Console App，就能直观的看到所有系统关键日志了，比如网络异常日志可以查看 nsurlsessiond，定位异常日志查看 locationd，Background Task 异常日志可以查看 assertiond，也可以直接按照你 app 的进程名进行过滤，查看生命周期以及被强杀的原因。</p>
+<h3 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h3><p>以上是最近调查 Background Task crash 的一些知识点分享，希望对大家有所帮助。</p>
+
       
     </div>
     
@@ -413,8 +462,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <section class="site-overview sidebar-panel sidebar-panel-active">
+      <section class="site-overview sidebar-panel">
         <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
           <img class="site-author-image" itemprop="image" src="/uploads/girl.jpg" alt="小怪兽">
           <p class="site-author-name" itemprop="name">小怪兽</p>
@@ -456,6 +514,22 @@
 
       </section>
 
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-3"><a class="nav-link" href="#Crash-信号"><span class="nav-number">1.</span> <span class="nav-text">Crash 信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Background-Task-花式-crash"><span class="nav-number">2.</span> <span class="nav-text">Background Task 花式 crash</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#0xdead10cc"><span class="nav-number">3.</span> <span class="nav-text">0xdead10cc</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#0xbada5e47"><span class="nav-number">4.</span> <span class="nav-text">0xbada5e47</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#0x8badf00d"><span class="nav-number">5.</span> <span class="nav-text">0x8badf00d</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#善用设备本地的-crash-日志"><span class="nav-number">6.</span> <span class="nav-text">善用设备本地的 crash 日志</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#总结"><span class="nav-number">7.</span> <span class="nav-text">总结</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
       
 
       
